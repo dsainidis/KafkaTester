@@ -5,21 +5,28 @@ import android.os.Bundle;
 import android.os.StrictMode;
 import android.util.Log;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.Spinner;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.android.volley.AuthFailureError;
+import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
+import com.android.volley.ServerError;
 import com.android.volley.VolleyError;
+import com.android.volley.toolbox.HttpHeaderParser;
+import com.android.volley.toolbox.JsonArrayRequest;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -30,10 +37,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
@@ -46,7 +53,7 @@ import javax.net.ssl.SSLSession;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
-public class MainActivity extends AppCompatActivity implements View.OnClickListener {
+public class MainActivity extends AppCompatActivity implements View.OnClickListener, AdapterView.OnItemSelectedListener {
 
     private static final HostnameVerifier DO_NOT_VERIFY = new HostnameVerifier() {
         @SuppressLint("BadHostnameVerifier")
@@ -57,22 +64,28 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private Button btnPost;
     private Button btnGet;
-    private Button btnToken;
+    private Button btnSet;
+    private Button btnAttach;
 
-    private CheckBox checkSecure;
+    private Spinner spinnerKafka;
+    private ArrayAdapter<CharSequence> kafka_list;
 
-    private EditText editIP;
-    private EditText editPort;
     private EditText editTopic;
     private EditText editSize;
 
-    private String ip;
-    private String port;
     private String topic;
-    private String secure;
     private String token;
+    private String selectedKafka;
+    private String kafkaURL;
+    private String tokenURL;
+    private String message;
+    private String consumerName;
+    private String consumerType;
 
+    private int kafkaPos;
     private int size;
+
+    private boolean isSecure;
 
     private RequestQueue postQueue, getQueue, consumerQueue;
 
@@ -86,20 +99,31 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     public void main() {
-        btnPost = findViewById(R.id.btn_send);
-        btnGet = findViewById(R.id.btn_receive);
-        btnToken = findViewById(R.id.btn_token);
+        token = "";
+        tokenURL = "";
+        kafkaURL = "";
+        isSecure = false;
+        consumerName = "testConsumer";
+        consumerType = "latest";
 
-        checkSecure = findViewById(R.id.secureBox);
+        btnPost = findViewById(R.id.btn_post);
+        btnGet = findViewById(R.id.btn_get);
+        btnSet = findViewById(R.id.btn_set);
+        btnAttach = findViewById(R.id.btn_attach);
 
-        editIP = findViewById(R.id.editIP);
-        editPort = findViewById(R.id.editPort);
+        spinnerKafka = findViewById(R.id.spinner_kafka);
+        kafka_list = ArrayAdapter.createFromResource(this, R.array.kafka_brokers, android.R.layout.simple_spinner_item);
+        kafka_list.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerKafka.setAdapter(kafka_list);
+
         editTopic = findViewById(R.id.editTopic);
         editSize = findViewById(R.id.editSize);
 
         btnPost.setOnClickListener(this);
         btnGet.setOnClickListener(this);
-        btnToken.setOnClickListener(this);
+        btnSet.setOnClickListener(this);
+        btnAttach.setOnClickListener(this);
+        spinnerKafka.setOnItemSelectedListener(this);
 
         postQueue = Volley.newRequestQueue(this);
         getQueue = Volley.newRequestQueue(this);
@@ -109,40 +133,53 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         readConfigFile();
 
-        if (!(ip.isEmpty() || port.isEmpty() || topic.isEmpty())) {
-            makeConsumer("testConsumer", "latest");
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-
-            makeSubscription("testConsumer", topic);
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
-
+        message = generateRandomMessage(size);
+        //message = "aMessage";
     }
 
     @SuppressLint("NonConstantResourceId")
     @Override
     public void onClick(View v) {
         writeConfigFile();
-
         switch (v.getId()) {
+            case R.id.btn_post:
 
-            case R.id.btn_send:
-                makePOST(generateRandomMessage(size), topic);
+                makePOST(kafkaURL, message, topic);
                 break;
-            case R.id.btn_token:
-                getAccessToken(ip);
+
+            case R.id.btn_get:
+                makeGET(kafkaURL, consumerName);
                 break;
+
+            case R.id.btn_set:
+                getURLs();
+                showLongToast("Kafka: " + selectedKafka + "\nSecure: " + isSecure + "\nTopic: " + topic + "\nSize: " + size);
+                break;
+
+            case R.id.btn_attach:
+                makeConsumer(kafkaURL, consumerName, consumerType);
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                makeSubscription(kafkaURL, consumerName, topic);
+                break;
+
             default:
                 break;
         }
+    }
+
+    @Override
+    public void onItemSelected(AdapterView<?> adapterView, View view, int i, long l) {
+        kafkaPos = i;
+        selectedKafka = adapterView.getItemAtPosition(i).toString();
+    }
+
+    @Override
+    public void onNothingSelected(AdapterView<?> adapterView) {
+
     }
 
     private void generateConfigFile() {
@@ -153,12 +190,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if (!settingsFile.exists()) {
             JSONObject settingsJSON = new JSONObject();
             try {
-                settingsJSON.put("ip", "");
-                settingsJSON.put("port", "");
+                settingsJSON.put("kafka", "0");
                 settingsJSON.put("topic", "test");
                 settingsJSON.put("size", "1");
-                settingsJSON.put("secure", "false");
-
 
                 FileWriter writer = new FileWriter(path);
                 writer.write(settingsJSON.toString());
@@ -186,18 +220,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             String contents = stringBuilder.toString();
             JSONObject configJSON = new JSONObject(contents);
 
-            ip = configJSON.getString("ip");
-            port = configJSON.getString("port");
+            kafkaPos = Integer.parseInt(configJSON.getString("kafka"));
             topic = configJSON.getString("topic");
             size = Integer.parseInt(configJSON.getString("size"));
-            secure = configJSON.getString("secure");
 
-            editIP.setText(ip);
-            editPort.setText(port);
             editTopic.setText(topic);
             editSize.setText(String.valueOf(size));
-
-            checkSecure.setChecked(secure.equals("true"));
+            spinnerKafka.setSelection(kafkaPos);
 
         } catch (IOException | JSONException e) {
             e.printStackTrace();
@@ -207,20 +236,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private void writeConfigFile() {
         String path = getFilesDir() + "/config.json";
 
-        ip = editIP.getText().toString();
-        port = editPort.getText().toString();
         topic = editTopic.getText().toString();
         size = Integer.parseInt(editSize.getText().toString());
-        secure = (checkSecure.isChecked() ? "true" : "false");
 
         JSONObject configJSON = new JSONObject();
 
         try {
-            configJSON.put("ip", ip);
-            configJSON.put("port", port);
+            configJSON.put("kafka", String.valueOf(spinnerKafka.getSelectedItemPosition()));
             configJSON.put("topic", topic);
             configJSON.put("size", String.valueOf(size));
-            configJSON.put("secure", secure);
 
             FileWriter writer = new FileWriter(path);
             writer.write(configJSON.toString());
@@ -230,20 +254,48 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
     }
 
-    private void makePOST(String message, String topic) {
-        String URL = "http://" + ip + ":" + port + "/topics/" + topic;
+    private void getURLs() {
+        if (kafkaPos == 0) {
+            kafkaURL = "http://faster.inov.pt:8082";
+            isSecure = false;
+            tokenURL = "";
+            token = "";
+        } else if (kafkaPos == 1) {
+            kafkaURL = "http://faster2.inov.pt:8444";
+            isSecure = true;
+            tokenURL = "https://faster2.inov.pt:8443/auth/realms/faster/protocol/openid-connect/token";
+            token = getAccessToken(tokenURL);
+        } else if (kafkaPos == 2) {
+            kafkaURL = "https://faster-fog.ecosys.eu:8444/ikafkarest";
+            isSecure = true;
+            tokenURL = "https://faster-fog.ecosys.eu:8443/auth/realms/faster/protocol/openid-connect/token";
+            token = getAccessToken(tokenURL);
+        }
+
+    }
+
+    private void makePOST(String url, String message, String topic) {
+        String URL = url + "/topics/" + topic;
         StringRequest stringRequest;
 
-        if (secure.equals("true")) {
+        if (isSecure) {
             stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
                 @Override
                 public void onResponse(String response) {
-                    //Log.i("makePOST", "onResponse: " + response);
+                    Log.i("makePOST", "URL: " + URL + "\nonResponse: " + response);
                 }
             }, new Response.ErrorListener() {
                 @Override
                 public void onErrorResponse(VolleyError error) {
-                    Log.w("makePOST", "onErrorResponse: " + error.getMessage());
+                    NetworkResponse response = error.networkResponse;
+                    if (error instanceof ServerError && response != null) {
+                        try {
+                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
+                            Log.w("makePOST", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
+                        } catch (UnsupportedEncodingException e1) {
+                            e1.printStackTrace();
+                        }
+                    }
                 }
             }) {
                 @Override
@@ -268,12 +320,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
                 @Override
                 public void onResponse(String response) {
-                    //Log.i("makePOST", "onResponse: " + response);
+                    Log.i("makePOST", "URL: " + URL + "\nonResponse: " + response);
                 }
             }, new Response.ErrorListener() {
                 @Override
                 public void onErrorResponse(VolleyError error) {
-                    Log.w("makePOST", "onErrorResponse: " + error.getMessage());
+                    NetworkResponse response = error.networkResponse;
+                    if (error instanceof ServerError && response != null) {
+                        try {
+                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
+                            Log.w("makePOST", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
+                        } catch (UnsupportedEncodingException e1) {
+                            e1.printStackTrace();
+                        }
+                    }
                 }
             }) {
                 @Override
@@ -291,12 +351,47 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         postQueue.add(stringRequest);
     }
 
-    private void makeConsumer(String consumerName, String autoOffsetReset) {
-        String URL = "http://" + ip + ":" + port + "/consumers/" + consumerName;
+    private void makeGET(String url, String consumerName) {
+        String URL = url + "/consumers/" + consumerName + "/instances/" + consumerName + "/records";
+
+        JsonArrayRequest jsonArrayRequest = new JsonArrayRequest(Request.Method.GET, URL, null, new Response.Listener<JSONArray>() {
+            @Override
+            public void onResponse(JSONArray response) {
+                Log.i("makeGET", "URL: " + URL + "\nonResponse: " + response);
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                NetworkResponse response = error.networkResponse;
+                if (error instanceof ServerError && response != null) {
+                    try {
+                        String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
+                        Log.w("makeGet", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
+                    } catch (UnsupportedEncodingException e1) {
+                        e1.printStackTrace();
+                    }
+                }
+            }
+        }) {
+            @Override
+            public Map<String, String> getHeaders() {
+                HashMap<String, String> headers = new HashMap<>();
+                headers.put("Accept", "application/vnd.kafka.json.v2+json");
+                if (isSecure) {
+                    headers.put("Authorization", "Bearer " + token);
+                }
+                return headers;
+            }
+        };
+        getQueue.add(jsonArrayRequest);
+    }
+
+    private void makeConsumer(String url, String consumerName, String autoOffsetReset) {
+        String URL = url + "/consumers/" + consumerName;
         String data = "{\"name\": \"" + consumerName + "\", \"format\": \"json\", \"auto.offset.reset\": \"" + autoOffsetReset + "\", \"consumer.request.timeout.ms\": 10}";
         StringRequest stringRequest;
 
-        if (secure.equals("true")) {
+        if (isSecure) {
             stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
                 @Override
                 public void onResponse(String response) {
@@ -305,7 +400,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }, new Response.ErrorListener() {
                 @Override
                 public void onErrorResponse(VolleyError error) {
-                    Log.w("makeConsumer", "onErrorResponse: " + error.getMessage());
+                    NetworkResponse response = error.networkResponse;
+                    if (error instanceof ServerError && response != null) {
+                        try {
+                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
+                            Log.w("makeConsumer", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
+                        } catch (UnsupportedEncodingException e1) {
+                            e1.printStackTrace();
+                        }
+                    }
                 }
             }) {
                 @Override
@@ -335,7 +438,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }, new Response.ErrorListener() {
                 @Override
                 public void onErrorResponse(VolleyError error) {
-                    Log.w("makeConsumer", "onErrorResponse: " + error.getMessage());
+                    NetworkResponse response = error.networkResponse;
+                    if (error instanceof ServerError && response != null) {
+                        try {
+                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
+                            Log.w("makeConsumer", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
+                        } catch (UnsupportedEncodingException e1) {
+                            e1.printStackTrace();
+                        }
+                    }
                 }
             }) {
 
@@ -354,12 +465,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         consumerQueue.add(stringRequest);
     }
 
-    private void makeSubscription(String consumerName, String topic) {
-        String URL = "http://" + ip + ":" + port + "/consumers/" + consumerName + "/instances/" + consumerName + "/subscription";
+    private void makeSubscription(String url, String consumerName, String topic) {
+        String URL = url + "/consumers/" + consumerName + "/instances/" + consumerName + "/subscription";
         String data = "{\"topics\":[\"" + topic + "\"]}";
         StringRequest stringRequest;
 
-        if (secure.equals("true")) {
+        if (isSecure) {
             stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
                 @Override
                 public void onResponse(String response) {
@@ -368,7 +479,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }, new Response.ErrorListener() {
                 @Override
                 public void onErrorResponse(VolleyError error) {
-                    Log.w("makeSubscription", "onErrorResponse: " + error.getMessage());
+                    NetworkResponse response = error.networkResponse;
+                    if (error instanceof ServerError && response != null) {
+                        try {
+                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
+                            Log.w("makeSubscription", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
+                        } catch (UnsupportedEncodingException e1) {
+                            e1.printStackTrace();
+                        }
+                    }
                 }
             }) {
                 @Override
@@ -398,10 +517,17 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }, new Response.ErrorListener() {
                 @Override
                 public void onErrorResponse(VolleyError error) {
-                    Log.w("makeSubscription", "onErrorResponse: " + error.getMessage());
+                    NetworkResponse response = error.networkResponse;
+                    if (error instanceof ServerError && response != null) {
+                        try {
+                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
+                            Log.w("makeSubscription", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
+                        } catch (UnsupportedEncodingException e1) {
+                            e1.printStackTrace();
+                        }
+                    }
                 }
             }) {
-
                 @Override
                 public String getBodyContentType() {
                     return "application/vnd.kafka.json.v2+json";
@@ -417,8 +543,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         consumerQueue.add(stringRequest);
     }
 
-    private void getAccessToken(String ip) {
+    private String getAccessToken(String ip) {
         HttpURLConnection connection;
+        String token = "";
         URL url;
 
         @SuppressLint("CustomX509TrustManager")
@@ -443,7 +570,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }};
 
         try {
-            url = new URL("https://" + ip + ":8443/auth/realms/faster/protocol/openid-connect/token");
+            url = new URL(ip);
 
             if ("https".equalsIgnoreCase(url.getProtocol())) {
                 SSLContext sslContext = SSLContext.getInstance("TLS");
@@ -482,6 +609,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     JSONObject response = new JSONObject(jsonString);
                     token = response.getString("access_token");
                     showLongToast(token);
+
                 } else {
                     showLongToast("Failed to acquire access token");
                 }
@@ -491,6 +619,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         } catch (IOException | JSONException | NoSuchAlgorithmException | KeyManagementException e) {
             e.printStackTrace();
         }
+        return token;
     }
 
     private void showLongToast(String toastMsg) {
@@ -524,5 +653,4 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         return sb.toString();
     }
-
 }
