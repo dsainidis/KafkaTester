@@ -3,7 +3,6 @@ package com.faster.kafkatester;
 import android.annotation.SuppressLint;
 import android.os.Bundle;
 import android.os.StrictMode;
-import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -15,13 +14,10 @@ import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.android.volley.AuthFailureError;
-import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
-import com.android.volley.ServerError;
 import com.android.volley.VolleyError;
-import com.android.volley.toolbox.HttpHeaderParser;
 import com.android.volley.toolbox.JsonArrayRequest;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
@@ -37,7 +33,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -78,6 +73,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private String selectedKafka;
     private String kafkaURL;
     private String tokenURL;
+    private String clientID;
+    private String clientSecret;
     private String message;
     private String consumerName;
     private String consumerType;
@@ -101,6 +98,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public void main() {
         token = "";
         tokenURL = "";
+        clientID = "";
+        clientSecret = "";
         kafkaURL = "";
         isSecure = false;
         consumerName = "testConsumer";
@@ -153,7 +152,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
             case R.id.btn_set:
                 getURLs();
-                showLongToast("Kafka: " + selectedKafka + "\nSecure: " + isSecure + "\nTopic: " + topic + "\nSize: " + size);
+                showShortToast("Kafka: " + selectedKafka + "\nSecure: " + isSecure + "\nTopic: " + topic + "\nSize: " + size);
                 break;
 
             case R.id.btn_attach:
@@ -259,17 +258,30 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             kafkaURL = "http://faster.inov.pt:8082";
             isSecure = false;
             tokenURL = "";
+            clientID = "";
+            clientSecret = "";
             token = "";
         } else if (kafkaPos == 1) {
             kafkaURL = "http://faster2.inov.pt:8444";
             isSecure = true;
             tokenURL = "https://faster2.inov.pt:8443/auth/realms/faster/protocol/openid-connect/token";
-            token = getAccessToken(tokenURL);
+            clientID = "faster-gs";
+            clientSecret = "f9a2d780-eb0f-4bd7-b68f-e1d008a1bd33";
+            token = getAccessToken(tokenURL, clientID, clientSecret);
         } else if (kafkaPos == 2) {
-            kafkaURL = "https://faster-fog.ecosys.eu:8444/ikafkarest";
+            kafkaURL = "https://faster-fog.ecosys.eu/ikafkarest";
             isSecure = true;
             tokenURL = "https://faster-fog.ecosys.eu:8443/auth/realms/faster/protocol/openid-connect/token";
-            token = getAccessToken(tokenURL);
+            clientID = "faster-gs";
+            clientSecret = "e3bObpFGvPMMPlePoYe2o7Gm9t8O6VPx";
+            token = getAccessToken(tokenURL, clientID, clientSecret);
+        } else if (kafkaPos == 3) {
+            kafkaURL = "https://faster-core.localnet/ikafkarest";
+            isSecure = true;
+            tokenURL = "https://faster-auth.localnet/auth/realms/faster/protocol/openid-connect/token";
+            clientID = "faster-gs";
+            clientSecret = "e3bObpFGvPMMPlePoYe2o7Gm9t8O6VPx";
+            token = getAccessToken(tokenURL, clientID, clientSecret);
         }
 
     }
@@ -278,75 +290,35 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         String URL = url + "/topics/" + topic;
         StringRequest stringRequest;
 
-        if (isSecure) {
-            stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
-                @Override
-                public void onResponse(String response) {
-                    Log.i("makePOST", "URL: " + URL + "\nonResponse: " + response);
-                }
-            }, new Response.ErrorListener() {
-                @Override
-                public void onErrorResponse(VolleyError error) {
-                    NetworkResponse response = error.networkResponse;
-                    if (error instanceof ServerError && response != null) {
-                        try {
-                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
-                            Log.w("makePOST", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
-                        } catch (UnsupportedEncodingException e1) {
-                            e1.printStackTrace();
-                        }
-                    }
-                }
-            }) {
-                @Override
-                public Map<String, String> getHeaders() throws AuthFailureError {
-                    HashMap<String, String> headers = new HashMap<>();
+        stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+                showShortToast(response.length() < 200 ? response.replace("\n", "") : response.replace("\n", "").substring(1,198) + "...");
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+            }
+        }) {
+            @Override
+            public Map<String, String> getHeaders() throws AuthFailureError {
+                HashMap<String, String> headers = new HashMap<>();
+                if (isSecure) {
                     headers.put("Authorization", "Bearer " + token);
-                    return headers;
                 }
+                return headers;
+            }
 
-                @Override
-                public String getBodyContentType() {
-                    return "application/vnd.kafka.json.v2+json";
-                }
+            @Override
+            public String getBodyContentType() {
+                return "application/vnd.kafka.json.v2+json";
+            }
 
-                @Override
-                public byte[] getBody() {
-                    return message == null ? null : message.getBytes();
-                }
-            };
-
-        } else {
-            stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
-                @Override
-                public void onResponse(String response) {
-                    Log.i("makePOST", "URL: " + URL + "\nonResponse: " + response);
-                }
-            }, new Response.ErrorListener() {
-                @Override
-                public void onErrorResponse(VolleyError error) {
-                    NetworkResponse response = error.networkResponse;
-                    if (error instanceof ServerError && response != null) {
-                        try {
-                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
-                            Log.w("makePOST", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
-                        } catch (UnsupportedEncodingException e1) {
-                            e1.printStackTrace();
-                        }
-                    }
-                }
-            }) {
-                @Override
-                public String getBodyContentType() {
-                    return "application/vnd.kafka.json.v2+json";
-                }
-
-                @Override
-                public byte[] getBody() {
-                    return message == null ? null : message.getBytes();
-                }
-            };
-        }
+            @Override
+            public byte[] getBody() {
+                return message == null ? null : message.getBytes(StandardCharsets.UTF_8);
+            }
+        };
 
         postQueue.add(stringRequest);
     }
@@ -357,20 +329,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         JsonArrayRequest jsonArrayRequest = new JsonArrayRequest(Request.Method.GET, URL, null, new Response.Listener<JSONArray>() {
             @Override
             public void onResponse(JSONArray response) {
-                Log.i("makeGET", "URL: " + URL + "\nonResponse: " + response);
+                showShortToast(response.toString().length() < 200 ? response.toString().replace("\n", "") : response.toString().replace("\n", "").substring(1,198) + "...");
             }
         }, new Response.ErrorListener() {
             @Override
             public void onErrorResponse(VolleyError error) {
-                NetworkResponse response = error.networkResponse;
-                if (error instanceof ServerError && response != null) {
-                    try {
-                        String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
-                        Log.w("makeGet", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
-                    } catch (UnsupportedEncodingException e1) {
-                        e1.printStackTrace();
-                    }
-                }
             }
         }) {
             @Override
@@ -391,76 +354,36 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         String data = "{\"name\": \"" + consumerName + "\", \"format\": \"json\", \"auto.offset.reset\": \"" + autoOffsetReset + "\", \"consumer.request.timeout.ms\": 10}";
         StringRequest stringRequest;
 
-        if (isSecure) {
-            stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
-                @Override
-                public void onResponse(String response) {
-                    Log.i("makeConsumer", "onResponse: " + response);
-                }
-            }, new Response.ErrorListener() {
-                @Override
-                public void onErrorResponse(VolleyError error) {
-                    NetworkResponse response = error.networkResponse;
-                    if (error instanceof ServerError && response != null) {
-                        try {
-                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
-                            Log.w("makeConsumer", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
-                        } catch (UnsupportedEncodingException e1) {
-                            e1.printStackTrace();
-                        }
-                    }
-                }
-            }) {
-                @Override
-                public Map<String, String> getHeaders() throws AuthFailureError {
-                    HashMap<String, String> headers = new HashMap<>();
+
+        stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+                showShortToast(response.length() < 200 ? response.replace("\n", "") : response.replace("\n", "").substring(1,198) + "...");
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+            }
+        }) {
+            @Override
+            public Map<String, String> getHeaders() throws AuthFailureError {
+                HashMap<String, String> headers = new HashMap<>();
+                if (isSecure) {
                     headers.put("Authorization", "Bearer " + token);
-                    return headers;
                 }
+                return headers;
+            }
 
-                @Override
-                public String getBodyContentType() {
-                    return "application/vnd.kafka.json.v2+json";
-                }
+            @Override
+            public String getBodyContentType() {
+                return "application/vnd.kafka.json.v2+json";
+            }
 
-                @Override
-                public byte[] getBody() {
-                    return data.getBytes();
-                }
-            };
-
-        } else {
-            stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
-                @Override
-                public void onResponse(String response) {
-                    Log.i("makeConsumer", "onResponse: " + response);
-                }
-            }, new Response.ErrorListener() {
-                @Override
-                public void onErrorResponse(VolleyError error) {
-                    NetworkResponse response = error.networkResponse;
-                    if (error instanceof ServerError && response != null) {
-                        try {
-                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
-                            Log.w("makeConsumer", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
-                        } catch (UnsupportedEncodingException e1) {
-                            e1.printStackTrace();
-                        }
-                    }
-                }
-            }) {
-
-                @Override
-                public String getBodyContentType() {
-                    return "application/vnd.kafka.json.v2+json";
-                }
-
-                @Override
-                public byte[] getBody() {
-                    return data.getBytes();
-                }
-            };
-        }
+            @Override
+            public byte[] getBody() {
+                return data.getBytes();
+            }
+        };
 
         consumerQueue.add(stringRequest);
     }
@@ -470,80 +393,40 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         String data = "{\"topics\":[\"" + topic + "\"]}";
         StringRequest stringRequest;
 
-        if (isSecure) {
-            stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
-                @Override
-                public void onResponse(String response) {
-                    Log.i("makeSubscription", "onResponse: " + response);
-                }
-            }, new Response.ErrorListener() {
-                @Override
-                public void onErrorResponse(VolleyError error) {
-                    NetworkResponse response = error.networkResponse;
-                    if (error instanceof ServerError && response != null) {
-                        try {
-                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
-                            Log.w("makeSubscription", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
-                        } catch (UnsupportedEncodingException e1) {
-                            e1.printStackTrace();
-                        }
-                    }
-                }
-            }) {
-                @Override
-                public Map<String, String> getHeaders() throws AuthFailureError {
-                    HashMap<String, String> headers = new HashMap<>();
+
+        stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+                showShortToast(response.length() < 200 ? response.replace("\n", "") : response.replace("\n", "").substring(1,198) + "...");
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {}
+        }) {
+            @Override
+            public Map<String, String> getHeaders() throws AuthFailureError {
+                HashMap<String, String> headers = new HashMap<>();
+                if (isSecure) {
                     headers.put("Authorization", "Bearer " + token);
-                    return headers;
                 }
+                return headers;
+            }
 
-                @Override
-                public String getBodyContentType() {
-                    return "application/vnd.kafka.json.v2+json";
-                }
+            @Override
+            public String getBodyContentType() {
+                return "application/vnd.kafka.json.v2+json";
+            }
 
-                @Override
-                public byte[] getBody() {
-                    return data.getBytes();
-                }
-            };
-
-        } else {
-            stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
-                @Override
-                public void onResponse(String response) {
-                    Log.i("makeSubscription", "onResponse: " + response);
-                }
-            }, new Response.ErrorListener() {
-                @Override
-                public void onErrorResponse(VolleyError error) {
-                    NetworkResponse response = error.networkResponse;
-                    if (error instanceof ServerError && response != null) {
-                        try {
-                            String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
-                            Log.w("makeSubscription", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
-                        } catch (UnsupportedEncodingException e1) {
-                            e1.printStackTrace();
-                        }
-                    }
-                }
-            }) {
-                @Override
-                public String getBodyContentType() {
-                    return "application/vnd.kafka.json.v2+json";
-                }
-
-                @Override
-                public byte[] getBody() {
-                    return data.getBytes();
-                }
-            };
-        }
+            @Override
+            public byte[] getBody() {
+                return data.getBytes();
+            }
+        };
 
         consumerQueue.add(stringRequest);
     }
 
-    private String getAccessToken(String ip) {
+    private String getAccessToken(String ip, String id, String pass) {
         HttpURLConnection connection;
         String token = "";
         URL url;
@@ -586,7 +469,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
 
-                String data = "grant_type=client_credentials&client_id=faster-gs&client_secret=f9a2d780-eb0f-4bd7-b68f-e1d008a1bd33";
+                String data = "grant_type=client_credentials&client_id=" + id + "&client_secret=" + pass;
 
                 OutputStream stream = connection.getOutputStream();
                 stream.write(data.getBytes(StandardCharsets.UTF_8));
@@ -608,10 +491,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     String jsonString = sb.toString();
                     JSONObject response = new JSONObject(jsonString);
                     token = response.getString("access_token");
-                    showLongToast(token);
+
+                    showShortToast("Token acquisition successful");
 
                 } else {
-                    showLongToast("Failed to acquire access token");
+                    showShortToast("Failed to acquire access token");
                 }
 
                 connection.disconnect();
@@ -620,15 +504,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             e.printStackTrace();
         }
         return token;
-    }
-
-    private void showLongToast(String toastMsg) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                Toast.makeText(getApplicationContext(), toastMsg, Toast.LENGTH_LONG).show();
-            }
-        });
     }
 
     private void showShortToast(String toastMsg) {
@@ -651,6 +526,64 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             sb.append(AlphaNumericString.charAt(index));
         }
 
-        return sb.toString();
+        message = sb.toString();
+        JSONObject value = new JSONObject();
+        try {
+            value.put("value", message);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        JSONArray values = new JSONArray();
+        values.put(value);
+        return "{\"records\":" + values + "}";
+
     }
+
+    /*private void makePOSTBackup(String url, String message, String topic) {
+        String URL = url + "/topics/" + topic;
+        StringRequest stringRequest;
+
+        stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+                showLongToast(response.substring(0, 200));
+                Log.i("makePOST", "URL: " + URL + "\nonResponse: " + response);
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                showLongToast(Objects.requireNonNull(error.getMessage()).substring(1, 200));
+                NetworkResponse response = error.networkResponse;
+                if (error instanceof ServerError && response != null) {
+                    try {
+                        String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
+                        Log.w("makePOST", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
+                    } catch (UnsupportedEncodingException e1) {
+                        e1.printStackTrace();
+                    }
+                }
+            }
+        }) {
+            @Override
+            public Map<String, String> getHeaders() throws AuthFailureError {
+                HashMap<String, String> headers = new HashMap<>();
+                if (isSecure) {
+                    headers.put("Authorization", "Bearer " + token);
+                }
+                return headers;
+            }
+
+            @Override
+            public String getBodyContentType() {
+                return "application/vnd.kafka.json.v2+json";
+            }
+
+            @Override
+            public byte[] getBody() {
+                return message == null ? null : message.getBytes(StandardCharsets.UTF_8);
+            }
+        };
+
+        postQueue.add(stringRequest);
+    }*/
 }

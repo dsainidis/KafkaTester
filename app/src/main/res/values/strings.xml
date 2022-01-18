@@ -4,6 +4,7 @@
         <item>faster.inov.pt (Plain)</item>
         <item>faster2.inov.pt (Secure)</item>
         <item>faster-fog.ecosys.eu (Secure)</item>
+        <item>faster-core.localnet (Secure)</item>
     </string-array>
 
     <string name="app_name">KafkaTester</string>
