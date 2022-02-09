@@ -1,6 +1,7 @@
 package com.faster.kafkatester;
 
 import android.annotation.SuppressLint;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.os.StrictMode;
 import android.view.View;
@@ -65,6 +66,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private Spinner spinnerKafka;
     private ArrayAdapter<CharSequence> kafka_list;
 
+    private EditText editCustomKafka;
     private EditText editTopic;
     private EditText editSize;
 
@@ -72,6 +74,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private String token;
     private String selectedKafka;
     private String kafkaURL;
+    private String customKafkaURL;
     private String tokenURL;
     private String clientID;
     private String clientSecret;
@@ -101,6 +104,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         clientID = "";
         clientSecret = "";
         kafkaURL = "";
+        customKafkaURL = "";
         isSecure = false;
         consumerName = "testConsumer";
         consumerType = "latest";
@@ -115,6 +119,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         kafka_list.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerKafka.setAdapter(kafka_list);
 
+        editCustomKafka = findViewById(R.id.editCustomKafka);
         editTopic = findViewById(R.id.editTopic);
         editSize = findViewById(R.id.editSize);
 
@@ -133,7 +138,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         readConfigFile();
 
         message = generateRandomMessage(size);
-        //message = "aMessage";
     }
 
     @SuppressLint("NonConstantResourceId")
@@ -174,6 +178,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public void onItemSelected(AdapterView<?> adapterView, View view, int i, long l) {
         kafkaPos = i;
         selectedKafka = adapterView.getItemAtPosition(i).toString();
+
+        if (i != 4) {
+            //editCustomKafka.setFocusable(false);
+            //editCustomKafka.setClickable(false);
+            editCustomKafka.setEnabled(false);
+            editCustomKafka.setHint("Disabled");
+
+        } else {
+            //editCustomKafka.setFocusable(true);
+            //editCustomKafka.setClickable(true);
+            editCustomKafka.setEnabled(true);
+            editCustomKafka.setHint("Enter Kafka URL");
+
+        }
     }
 
     @Override
@@ -190,6 +208,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             JSONObject settingsJSON = new JSONObject();
             try {
                 settingsJSON.put("kafka", "0");
+                settingsJSON.put("customKafka", "");
                 settingsJSON.put("topic", "test");
                 settingsJSON.put("size", "1");
 
@@ -220,10 +239,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             JSONObject configJSON = new JSONObject(contents);
 
             kafkaPos = Integer.parseInt(configJSON.getString("kafka"));
+            customKafkaURL = configJSON.getString("customKafka");
             topic = configJSON.getString("topic");
             size = Integer.parseInt(configJSON.getString("size"));
 
             editTopic.setText(topic);
+            editCustomKafka.setText(customKafkaURL);
             editSize.setText(String.valueOf(size));
             spinnerKafka.setSelection(kafkaPos);
 
@@ -236,12 +257,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         String path = getFilesDir() + "/config.json";
 
         topic = editTopic.getText().toString();
+        customKafkaURL = editCustomKafka.getText().toString();
         size = Integer.parseInt(editSize.getText().toString());
 
         JSONObject configJSON = new JSONObject();
 
         try {
             configJSON.put("kafka", String.valueOf(spinnerKafka.getSelectedItemPosition()));
+            configJSON.put("customKafka", customKafkaURL);
             configJSON.put("topic", topic);
             configJSON.put("size", String.valueOf(size));
 
@@ -282,6 +305,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             clientID = "faster-gs";
             clientSecret = "e3bObpFGvPMMPlePoYe2o7Gm9t8O6VPx";
             token = getAccessToken(tokenURL, clientID, clientSecret);
+        } else if (kafkaPos == 4) {
+            kafkaURL = customKafkaURL;
+            isSecure = false;
+            tokenURL = "";
+            clientID = "";
+            clientSecret = "";
+            token = "";
         }
 
     }
@@ -293,7 +323,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
             @Override
             public void onResponse(String response) {
-                showShortToast(response.length() < 200 ? response.replace("\n", "") : response.replace("\n", "").substring(1,198) + "...");
+                showShortToast(response.length() < 200 ? response.replace("\n", "") : response.replace("\n", "").substring(1, 198) + "...");
             }
         }, new Response.ErrorListener() {
             @Override
@@ -329,7 +359,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         JsonArrayRequest jsonArrayRequest = new JsonArrayRequest(Request.Method.GET, URL, null, new Response.Listener<JSONArray>() {
             @Override
             public void onResponse(JSONArray response) {
-                showShortToast(response.toString().length() < 200 ? response.toString().replace("\n", "") : response.toString().replace("\n", "").substring(1,198) + "...");
+                showShortToast(response.toString().length() < 200 ? response.toString().replace("\n", "") : response.toString().replace("\n", "").substring(1, 198) + "...");
             }
         }, new Response.ErrorListener() {
             @Override
@@ -358,7 +388,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
             @Override
             public void onResponse(String response) {
-                showShortToast(response.length() < 200 ? response.replace("\n", "") : response.replace("\n", "").substring(1,198) + "...");
+                showShortToast(response.length() < 200 ? response.replace("\n", "") : response.replace("\n", "").substring(1, 198) + "...");
             }
         }, new Response.ErrorListener() {
             @Override
@@ -397,11 +427,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
             @Override
             public void onResponse(String response) {
-                showShortToast(response.length() < 200 ? response.replace("\n", "") : response.replace("\n", "").substring(1,198) + "...");
+                showShortToast(response.length() < 200 ? response.replace("\n", "") : response.replace("\n", "").substring(1, 198) + "...");
             }
         }, new Response.ErrorListener() {
             @Override
-            public void onErrorResponse(VolleyError error) {}
+            public void onErrorResponse(VolleyError error) {
+            }
         }) {
             @Override
             public Map<String, String> getHeaders() throws AuthFailureError {
@@ -538,52 +569,4 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         return "{\"records\":" + values + "}";
 
     }
-
-    /*private void makePOSTBackup(String url, String message, String topic) {
-        String URL = url + "/topics/" + topic;
-        StringRequest stringRequest;
-
-        stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
-            @Override
-            public void onResponse(String response) {
-                showLongToast(response.substring(0, 200));
-                Log.i("makePOST", "URL: " + URL + "\nonResponse: " + response);
-            }
-        }, new Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error) {
-                showLongToast(Objects.requireNonNull(error.getMessage()).substring(1, 200));
-                NetworkResponse response = error.networkResponse;
-                if (error instanceof ServerError && response != null) {
-                    try {
-                        String res = new String(response.data, HttpHeaderParser.parseCharset(response.headers, "utf-8"));
-                        Log.w("makePOST", "URL: " + URL + "\nonErrorResponse: " + error.getMessage() + "\nResponse: " + res);
-                    } catch (UnsupportedEncodingException e1) {
-                        e1.printStackTrace();
-                    }
-                }
-            }
-        }) {
-            @Override
-            public Map<String, String> getHeaders() throws AuthFailureError {
-                HashMap<String, String> headers = new HashMap<>();
-                if (isSecure) {
-                    headers.put("Authorization", "Bearer " + token);
-                }
-                return headers;
-            }
-
-            @Override
-            public String getBodyContentType() {
-                return "application/vnd.kafka.json.v2+json";
-            }
-
-            @Override
-            public byte[] getBody() {
-                return message == null ? null : message.getBytes(StandardCharsets.UTF_8);
-            }
-        };
-
-        postQueue.add(stringRequest);
-    }*/
 }
